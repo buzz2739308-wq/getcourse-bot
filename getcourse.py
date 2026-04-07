@@ -20,8 +20,8 @@ MAX_POLLS = 40
 
 async def _create_export(session, date_from, date_to):
     url = f"{BASE_URL}/exports"
+    params = {"key": GC_API_KEY}
     payload = {
-        "key": GC_API_KEY,
         "type": "deals",
         "params": {
             "status_date": "created",
@@ -31,7 +31,7 @@ async def _create_export(session, date_from, date_to):
         },
         "fields": EXPORT_FIELDS,
     }
-    async with session.post(url, json=payload) as resp:
+    async with session.post(url, params=params, json=payload) as resp:
         resp.raise_for_status()
         data = await resp.json(content_type=None)
     if data.get("success") is not True:
