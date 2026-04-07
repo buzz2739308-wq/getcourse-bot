@@ -13,27 +13,22 @@ GC_DOMAIN = os.environ.get("GC_DOMAIN", "wildmanagerschoolru.getcourse.ru")
 GC_API_KEY = os.environ["GC_API_KEY"]
 BASE_URL = f"https://{GC_DOMAIN}/pl/api/account"
 
-EXPORT_FIELDS = ["id","created_at","user_email","user_name","user_utm_source","user_utm_medium","user_utm_campaign","deal_cost","deal_profit","deal_status","offer_title"]
-
 POLL_INTERVAL = 5
 MAX_POLLS = 40
 
 async def _create_export(session, date_from, date_to):
-    url = f"{BASE_URL}/exports"
-    params = {"key": GC_API_KEY}
-    payload = {
-        "type": "deals",
-        "params": {
-            "status_date": "created",
-            "date_from": date_from.strftime("%d.%m.%Y"),
-            "date_to": date_to.strftime("%d.%m.%Y"),
-            "deal_status": "payed",
-        },
-        "fields": EXPORT_FIELDS,
+    url = f"{BASE_URL}/deals"
+    params = {
+        "key": GC_API_KEY,
+        "status_date": "created",
+        "date_from": date_from.strftime("%d.%m.%Y"),
+        "date_to": date_to.strftime("%d.%m.%Y"),
+        "deal_status": "payed",
     }
-    async with session.post(url, params=params, json=payload) as resp:
+    async with session.get(url, params=params) as resp:
         resp.raise_for_status()
         data = await resp.json(content_type=None)
+    logger.info(f"GetCourse response: {data}")
     if data.get("success") is not True:
         raise RuntimeError(f"GetCourse API error: {data}")
     export_id = data["info"]["id"]
@@ -55,7 +50,7 @@ async def _wait_for_export(session, export_id):
             return info["file_url"]
         if status == "error":
             raise RuntimeError(f"Экспорт завершился с ошибкой: {info}")
-    raise TimeoutError(f"Экспорт {export_id} не готов после {MAX_POLLS} попыток")
+    raise TimeoutError(f"Экспорт не готов после {MAX_POLLS} попыток")
 
 async def _download_csv(session, file_url):
     async with session.get(file_url) as resp:
