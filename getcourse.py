@@ -13,17 +13,16 @@ GC_DOMAIN = os.environ.get("GC_DOMAIN", "wildmanagerschoolru.getcourse.ru")
 GC_API_KEY = os.environ["GC_API_KEY"]
 BASE_URL = f"https://{GC_DOMAIN}/pl/api/account"
 
-POLL_INTERVAL = 5
+POLL_INTERVAL = 10
 MAX_POLLS = 40
 
 async def _create_export(session, date_from, date_to):
     url = f"{BASE_URL}/deals"
     params = {
         "key": GC_API_KEY,
-        "status_date": "created",
-        "date_from": date_from.strftime("%d.%m.%Y"),
-        "date_to": date_to.strftime("%d.%m.%Y"),
-        "deal_status": "payed",
+        "created_at[from]": date_from.strftime("%Y-%m-%d"),
+        "created_at[to]": date_to.strftime("%Y-%m-%d"),
+        "status": "payed",
     }
     async with session.get(url, params=params) as resp:
         resp.raise_for_status()
