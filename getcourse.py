@@ -32,7 +32,7 @@ async def _create_export(session, date_from, date_to):
             data = await resp.json(content_type=None)
         logger.info(f"GetCourse response: {data}")
         if data.get("success") is True:
-            export_id = data["info"]["id"]
+            export_id = data["info"]["export_id"]
             logger.info(f"Экспорт создан, id={export_id}")
             return export_id
         error_code = data.get("error_code")
