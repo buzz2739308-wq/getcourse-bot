@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 import logging
 import os
 from datetime import date
@@ -25,7 +26,6 @@ async def _create_export(session, date_from, date_to):
         "payed_at[from]": date_from.strftime("%Y-%m-%d"),
         "payed_at[to]": date_to.strftime("%Y-%m-%d"),
         "status": "payed",
-        "format": "xlsx",
     }
     for attempt in range(MAX_RETRIES):
         async with session.get(url, params=params) as resp:
@@ -36,8 +36,8 @@ async def _create_export(session, date_from, date_to):
             export_id = data["info"]["export_id"]
             logger.info(f"Экспорт создан, id={export_id}")
             return export_id
-        if data.get("error_code") == 905:
-            logger.info(f"Очередь занята, жду 5 минут (попытка {attempt+1}/{MAX_RETRIES})")
+        if data.get("error_code") in (905, 903):
+            logger.info(f"Ожидаю, попытка {attempt+1}/{MAX_RETRIES}")
             await asyncio.sleep(RETRY_INTERVAL)
         else:
             raise RuntimeError(f"GetCourse API error: {data}")
@@ -50,30 +50,28 @@ async def _wait_and_download(session, export_id):
         await asyncio.sleep(POLL_INTERVAL)
         async with session.get(url, params=params) as resp:
             resp.raise_for_status()
-            content_type = resp.headers.get("Content-Type", "")
-            logger.info(f"Попытка {attempt+1}: Content-Type={content_type}")
-            if "application/json" in content_type or "text/html" in content_type:
-                # Файл ещё не готов
-                text = await resp.text()
-                logger.info(f"Ответ: {text[:200]}")
-                continue
-            else:
-                # Файл готов — читаем как бинарный
-                content = await resp.read()
-                logger.info(f"Файл получен, размер: {len(content)} байт")
-                return content
+            content = await resp.read()
+        try:
+            data = json.loads(content.decode("utf-8"))
+            info = data.get("info", {})
+            if "items" in info:
+                logger.info(f"Данные готовы, строк: {len(info['items'])}")
+                return info["fields"], info["items"]
+            logger.info(f"Попытка {attempt+1}: данные ещё не готовы")
+        except Exception as e:
+            logger.info(f"Попытка {attempt+1}: ошибка парсинга {e}")
     raise TimeoutError("Экспорт не готов после всех попыток")
 
 def _normalize(df):
     rename_map = {}
     for col in df.columns:
         low = col.lower()
-        if "utm_source" in low:
+        if "utm_source" in low and "deal" not in low and "gc_system" not in low:
             rename_map[col] = "user_utm_source"
-        elif "заработано" in low:
-            rename_map[col] = "Заработано"
-        elif "оплачено" in low:
-            rename_map[col] = "Оплачено"
+        elif col == "Заработано":
+            pass
+        elif col == "Оплачено":
+            pass
     df = df.rename(columns=rename_map)
     for num_col in ["Заработано", "Оплачено"]:
         if num_col in df.columns:
@@ -87,8 +85,8 @@ def _normalize(df):
 async def fetch_payments(for_date):
     async with aiohttp.ClientSession() as session:
         export_id = await _create_export(session, for_date, for_date)
-        content = await _wait_and_download(session, export_id)
-    df = pd.read_csv(io.BytesIO(content), encoding="utf-8-sig")
+        fields, items = await _wait_and_download(session, export_id)
+    df = pd.DataFrame(items, columns=fields)
     logger.info(f"Скачано {len(df)} строк из GetCourse")
     df = _normalize(df)
     return df
