@@ -15,8 +15,8 @@ BASE_URL = f"https://{GC_DOMAIN}/pl/api/account"
 
 POLL_INTERVAL = 10
 MAX_POLLS = 40
-RETRY_INTERVAL = 300  # 5 минут между попытками
-MAX_RETRIES = 12      # 12 попыток = 1 час
+RETRY_INTERVAL = 300
+MAX_RETRIES = 12
 
 async def _create_export(session, date_from, date_to):
     url = f"{BASE_URL}/deals"
@@ -30,18 +30,17 @@ async def _create_export(session, date_from, date_to):
         async with session.get(url, params=params) as resp:
             resp.raise_for_status()
             data = await resp.json(content_type=None)
-        logger.info(f"GetCourse response: {data}")
+        logger.info(f"GetCourse create response: {data}")
         if data.get("success") is True:
             export_id = data["info"]["export_id"]
             logger.info(f"Экспорт создан, id={export_id}")
             return export_id
-        error_code = data.get("error_code")
-        if error_code == 905:
+        if data.get("error_code") == 905:
             logger.info(f"Очередь занята, жду 5 минут (попытка {attempt+1}/{MAX_RETRIES})")
             await asyncio.sleep(RETRY_INTERVAL)
         else:
             raise RuntimeError(f"GetCourse API error: {data}")
-    raise RuntimeError("GetCourse: очередь занята больше часа, попробую завтра")
+    raise RuntimeError("GetCourse: очередь занята больше часа")
 
 async def _wait_for_export(session, export_id):
     url = f"{BASE_URL}/exports/{export_id}"
@@ -50,15 +49,22 @@ async def _wait_for_export(session, export_id):
         await asyncio.sleep(POLL_INTERVAL)
         async with session.get(url, params=params) as resp:
             resp.raise_for_status()
-            data = await resp.json(content_type=None)
-        info = data.get("info", {})
-        status = info.get("status")
-        logger.info(f"Экспорт {export_id}: статус={status} (попытка {attempt + 1})")
+            raw = await resp.json(content_type=None)
+        logger.info(f"Экспорт {export_id} ответ: {str(raw)[:300]}")
+        # GetCourse может вернуть список или словарь
+        if isinstance(raw, list):
+            data = raw[0] if raw else {}
+        else:
+            data = raw
+        info = data.get("info", data)
+        status = info.get("status") if isinstance(info, dict) else None
+        logger.info(f"Статус: {status} (попытка {attempt+1})")
         if status == "ready":
-            return info["file_url"]
+            file_url = info.get("file_url") or info.get("url")
+            return file_url
         if status == "error":
             raise RuntimeError(f"Экспорт завершился с ошибкой: {info}")
-    raise TimeoutError(f"Экспорт не готов после {MAX_POLLS} попыток")
+    raise TimeoutError("Экспорт не готов после всех попыток")
 
 async def _download_csv(session, file_url):
     async with session.get(file_url) as resp:
