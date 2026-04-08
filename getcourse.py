@@ -88,7 +88,7 @@ async def fetch_payments(for_date):
     async with aiohttp.ClientSession() as session:
         export_id = await _create_export(session, for_date, for_date)
         content = await _wait_and_download(session, export_id)
-    df = pd.read_excel(io.BytesIO(content))
+    df = pd.read_csv(io.BytesIO(content), encoding="utf-8-sig")
     logger.info(f"Скачано {len(df)} строк из GetCourse")
     df = _normalize(df)
     return df
