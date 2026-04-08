@@ -19,7 +19,7 @@ def build_excel(df, filename):
     thin = Border(left=Side(style="thin"), right=Side(style="thin"), top=Side(style="thin"), bottom=Side(style="thin"))
     headers = list(df.columns)
     for col_idx, header in enumerate(headers, start=1):
-        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell = ws.cell(row=1, column=col_idx, value=str(header))
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = center
@@ -28,6 +28,8 @@ def build_excel(df, filename):
     for row_idx, row in enumerate(df.itertuples(index=False), start=2):
         fill = alt_fill if row_idx % 2 == 0 else None
         for col_idx, value in enumerate(row, start=1):
+            if isinstance(value, list):
+                value = ", ".join(str(i) for i in value)
             cell = ws.cell(row=row_idx, column=col_idx, value=value)
             cell.border = thin
             cell.alignment = left
@@ -35,7 +37,7 @@ def build_excel(df, filename):
                 cell.fill = fill
     for col_idx, header in enumerate(headers, start=1):
         col_data = df.iloc[:, col_idx - 1].astype(str)
-        max_len = max(col_data.map(len).max(), len(header)) + 4
+        max_len = max(col_data.map(len).max(), len(str(header))) + 4
         ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len, 40)
     ws.freeze_panes = "A2"
     buf = io.BytesIO()
@@ -44,7 +46,10 @@ def build_excel(df, filename):
     return buf
 
 def fmt_money(value):
-    return f"{value:,.0f} ₽".replace(",", " ")
+    try:
+        return f"{float(value):,.0f} ₽".replace(",", " ")
+    except:
+        return f"{value} ₽"
 
 def pluralize_payments(n):
     if 11 <= n % 100 <= 19:
@@ -60,8 +65,8 @@ def build_analytics_text(df, date_str):
     total_count = len(df)
     has_profit = "Заработано" in df.columns
     has_cost = "Оплачено" in df.columns
-    total_profit = df["Заработано"].sum() if has_profit else 0
-    total_cost = df["Оплачено"].sum() if has_cost else 0
+    total_profit = float(df["Заработано"].sum()) if has_profit else 0
+    total_cost = float(df["Оплачено"].sum()) if has_cost else 0
     lines = [
         f"📊 <b>Аналитика за {date_str}:</b>",
         f"Всего оплат: <b>{total_count}</b>",
@@ -77,11 +82,13 @@ def build_analytics_text(df, date_str):
         lines.append("🎯 <b>По источникам трафика:</b>")
         group_col = "Заработано" if has_profit else ("Оплачено" if has_cost else None)
         if group_col:
-            grouped = df.groupby("user_utm_source", dropna=False).agg(count=("user_utm_source","count"), total=(group_col,"sum")).sort_values("total", ascending=False)
+            grouped = (
+                df.assign(user_utm_source=df["user_utm_source"].astype(str))
+                .groupby("user_utm_source", dropna=False)
+                .agg(count=("user_utm_source", "count"), total=(group_col, "sum"))
+                .sort_values("total", ascending=False)
+            )
             for source, row in grouped.iterrows():
                 count = int(row["count"])
                 lines.append(f"— {source}: {count} {pluralize_payments(count)} / {fmt_money(row['total'])}")
-        else:
-            for source, count in df["user_utm_source"].value_counts().items():
-                lines.append(f"— {source}: {count} {pluralize_payments(count)}")
     return "\n".join(lines)

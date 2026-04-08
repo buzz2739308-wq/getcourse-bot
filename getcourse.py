@@ -1,5 +1,4 @@
 import asyncio
-import io
 import json
 import logging
 import os
@@ -54,28 +53,27 @@ async def _wait_and_download(session, export_id):
         try:
             data = json.loads(content.decode("utf-8"))
             info = data.get("info", {})
-            if "items" in info:
+            if isinstance(info, dict) and "items" in info:
                 logger.info(f"Данные готовы, строк: {len(info['items'])}")
                 return info["fields"], info["items"]
             logger.info(f"Попытка {attempt+1}: данные ещё не готовы")
         except Exception as e:
-            logger.info(f"Попытка {attempt+1}: ошибка парсинга {e}")
+            logger.info(f"Попытка {attempt+1}: {e}")
     raise TimeoutError("Экспорт не готов после всех попыток")
 
-def _normalize(df):
-    rename_map = {}
+def build_dataframe(fields, items):
+    df = pd.DataFrame(items, columns=fields)
+    # Чистим списки в ячейках
     for col in df.columns:
-        low = col.lower()
-        if "utm_source" in low and "deal" not in low and "gc_system" not in low:
-            rename_map[col] = "user_utm_source"
-        elif col == "Заработано":
-            pass
-        elif col == "Оплачено":
-            pass
-    df = df.rename(columns=rename_map)
+        df[col] = df[col].apply(lambda x: ", ".join(str(i) for i in x) if isinstance(x, list) else x)
+    # Числовые колонки
     for num_col in ["Заработано", "Оплачено"]:
         if num_col in df.columns:
-            df[num_col] = (df[num_col].astype(str).str.replace(r"[^\d.,]", "", regex=True).str.replace(",", ".").pipe(pd.to_numeric, errors="coerce").fillna(0))
+            df[num_col] = pd.to_numeric(
+                df[num_col].astype(str).str.replace(r"[^\d.]", "", regex=True),
+                errors="coerce"
+            ).fillna(0)
+    # utm_source
     if "user_utm_source" in df.columns:
         df["user_utm_source"] = df["user_utm_source"].fillna("без источника").replace("", "без источника")
     else:
@@ -86,7 +84,6 @@ async def fetch_payments(for_date):
     async with aiohttp.ClientSession() as session:
         export_id = await _create_export(session, for_date, for_date)
         fields, items = await _wait_and_download(session, export_id)
-    df = pd.DataFrame(items, columns=fields)
-    logger.info(f"Скачано {len(df)} строк из GetCourse")
-    df = _normalize(df)
+    df = build_dataframe(fields, items)
+    logger.info(f"Итого строк: {len(df)}")
     return df
