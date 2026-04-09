@@ -131,6 +131,7 @@ async def fetch_deals_wednesday(date_from: date, date_to: date) -> pd.DataFrame:
             df["Стоимость, RUB"].astype(str).str.replace(r"[^0-9.]", "", regex=True),
             errors="coerce"
         ).fillna(0)
+        df = df[df["Стоимость, RUB"] > 0]
     return df
 
 def _top10_by_source(df: pd.DataFrame) -> list:
