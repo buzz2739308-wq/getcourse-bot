@@ -32,16 +32,9 @@ def get_wednesday_dates(today: date) -> dict:
     prev2_mon = mon - timedelta(weeks=2)
     prev2_wed = prev2_mon + timedelta(days=2)
     return {
-        "mon": mon,
-        "wed": wed,
-        "reg_group_name": (
-            f"{MONTHS_RU[mon.month]} | Стажировка | "
-            f"Регистрация на веб. {mon.strftime('%d')}-{wed.strftime('%d.%m.%Y')}"
-        ),
-        "entry_group_name": (
-            f"{MONTHS_RU[mon.month]} | Курс 2-26 | "
-            f"Вход на веб. {mon.strftime('%d.%m.%y')}"
-        ),
+        "mon": mon, "wed": wed,
+        "reg_group_name": f"{MONTHS_RU[mon.month]} | Стажировка | Регистрация на веб. {mon.strftime('%d')}-{wed.strftime('%d.%m.%Y')}",
+        "entry_group_name": f"{MONTHS_RU[mon.month]} | Курс 2-26 | Вход на веб. {mon.strftime('%d.%m.%y')}",
         "views_group_name": "КУРС 1.1 | Просмотр записи вебинара. День 1. 2025",
         "views_date_from": mon,
         "views_date_to": mon + timedelta(days=6),
@@ -137,10 +130,13 @@ async def fetch_deals_wednesday(date_from: date, date_to: date) -> pd.DataFrame:
     if "Теги предложений" in df.columns:
         for tag in exclude_tags:
             df = df[~df["Теги предложений"].str.contains(tag, na=False)]
-    # Исключаем нулевые заказы
+    # Чистим стоимость и фильтруем больше 100 руб
     if "Стоимость, RUB" in df.columns:
-        df["Стоимость, RUB"] = pd.to_numeric(df["Стоимость, RUB"].astype(str).str.replace(r"[^0-9.]", "", regex=True), errors="coerce").fillna(0)
-        df = df[df["Стоимость, RUB"] > 0]
+        df["Стоимость, RUB"] = pd.to_numeric(
+            df["Стоимость, RUB"].astype(str).str.replace(r"[^0-9.]", "", regex=True),
+            errors="coerce"
+        ).fillna(0)
+        df = df[df["Стоимость, RUB"] > 100]
     return df
 
 def _top10_by_source(df: pd.DataFrame) -> list:
@@ -170,12 +166,7 @@ def analytics_views_and_entries(df_entry: pd.DataFrame, df_views: pd.DataFrame, 
         f"Входов: <b>{len(df_entry)}</b>",
         f"Записей: <b>{len(df_views)}</b>",
         f"Итого: <b>{len(df_entry) + len(df_views)}</b>",
-        "",
-        "🎯 <b>Входы топ-10:</b>",
     ]
-    lines += _top10_by_source(df_entry)
-    lines += ["", "🎯 <b>Записи топ-10:</b>"]
-    lines += _top10_by_source(df_views)
     return "\n".join(lines)
 
 def analytics_deals_wednesday(df: pd.DataFrame, label: str) -> str:
