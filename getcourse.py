@@ -53,6 +53,11 @@ async def _wait_and_download(session, export_id):
         try:
             data = json.loads(content.decode("utf-8"))
             info = data.get("info", {})
+            if isinstance(info, str):
+                try:
+                    info = json.loads(info)
+                except (json.JSONDecodeError, TypeError):
+                    pass
             if isinstance(info, dict) and "items" in info:
                 logger.info(f"Данные готовы, строк: {len(info['items'])}")
                 return info["fields"], info["items"]
