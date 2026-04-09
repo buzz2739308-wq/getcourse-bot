@@ -121,7 +121,7 @@ async def fetch_deals_wednesday(date_from: date, date_to: date) -> pd.DataFrame:
             "key": GC_API_KEY,
             "created_at[from]": date_from.strftime("%Y-%m-%d"),
             "created_at[to]": date_to.strftime("%Y-%m-%d"),
-            "deal_cost[from]": "1",
+            "status": "payed",
         }
         export_id = await _create_export_with_retry(session, url, params)
         fields, items = await _wait_and_download(session, export_id)
