@@ -121,22 +121,16 @@ async def fetch_deals_wednesday(date_from: date, date_to: date) -> pd.DataFrame:
             "key": GC_API_KEY,
             "created_at[from]": date_from.strftime("%Y-%m-%d"),
             "created_at[to]": date_to.strftime("%Y-%m-%d"),
+            "deal_cost[from]": "1",
         }
         export_id = await _create_export_with_retry(session, url, params)
         fields, items = await _wait_and_download(session, export_id)
     df = _clean_df(fields, items)
-    # Исключаем ненужные теги
-    exclude_tags = ["*Инфографика", "Бизнес на Wildberries", "скидка_ноябрь2025"]
-    if "Теги предложений" in df.columns:
-        for tag in exclude_tags:
-            df = df[~df["Теги предложений"].str.contains(tag, na=False)]
-    # Чистим стоимость и фильтруем больше 100 руб
     if "Стоимость, RUB" in df.columns:
         df["Стоимость, RUB"] = pd.to_numeric(
             df["Стоимость, RUB"].astype(str).str.replace(r"[^0-9.]", "", regex=True),
             errors="coerce"
         ).fillna(0)
-        df = df[df["Стоимость, RUB"] > 100]
     return df
 
 def _top10_by_source(df: pd.DataFrame) -> list:
@@ -161,17 +155,16 @@ def analytics_users(df: pd.DataFrame, label: str, kind: str) -> str:
     return "\n".join(lines)
 
 def analytics_views_and_entries(df_entry: pd.DataFrame, df_views: pd.DataFrame, label: str) -> str:
-    lines = [
+    return "\n".join([
         f"📊 <b>Входы + Записи {label}:</b>",
         f"Входов: <b>{len(df_entry)}</b>",
         f"Записей: <b>{len(df_views)}</b>",
         f"Итого: <b>{len(df_entry) + len(df_views)}</b>",
-    ]
-    return "\n".join(lines)
+    ])
 
 def analytics_deals_wednesday(df: pd.DataFrame, label: str) -> str:
-    total = len(df)
     cost_col = "Стоимость, RUB"
+    total = len(df)
     total_sum = df[cost_col].sum() if cost_col in df.columns else 0
 
     def fmt(v):
