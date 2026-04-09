@@ -13,7 +13,7 @@ from analytics import build_excel, build_analytics_text
 from wednesday import (
     get_wednesday_dates, fetch_users_by_group,
     fetch_deals_wednesday, analytics_users,
-    analytics_deals_wednesday
+    analytics_deals_wednesday, analytics_views_and_entries
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -55,39 +55,46 @@ async def wednesday_job():
     label = f"{mon.strftime('%d')}-{wed.strftime('%d.%m')}"
     logger.info(f"Среда: выгрузки за {label}")
 
+    df_entry = None
+    df_views = None
+
     # 1. Регистрации
+    msg = await bot.send_message(chat_id=CHAT_ID, text=f"⏳ Выгружаю регистрации {label}...")
     try:
-        await bot.send_message(chat_id=CHAT_ID, text=f"⏳ Выгружаю регистрации {label}...")
         df_reg = await fetch_users_by_group(dates["reg_group_name"])
         filename = f"регистрации {label} вб2.xlsx"
         excel = build_excel(df_reg, filename)
         text = analytics_users(df_reg, label, "Регистрации")
+        await bot.delete_message(chat_id=CHAT_ID, message_id=msg.message_id)
         await bot.send_document(chat_id=CHAT_ID, document=excel, filename=filename, caption=f"📁 {filename}")
         await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
         logger.info("Регистрации отправлены")
     except Exception as e:
         logger.error(f"Ошибка регистраций: {e}")
+        await bot.delete_message(chat_id=CHAT_ID, message_id=msg.message_id)
         await bot.send_message(chat_id=CHAT_ID, text=f"❌ Ошибка регистраций:\n{e}")
 
     await asyncio.sleep(60)
 
     # 2. Входы
+    msg = await bot.send_message(chat_id=CHAT_ID, text=f"⏳ Выгружаю входы {mon.strftime('%d.%m')}...")
     try:
-        await bot.send_message(chat_id=CHAT_ID, text=f"⏳ Выгружаю входы {mon.strftime('%d.%m')}...")
         df_entry = await fetch_users_by_group(dates["entry_group_name"])
         filename = f"входы {mon.strftime('%d.%m')} вб2.xlsx"
         excel = build_excel(df_entry, filename)
+        await bot.delete_message(chat_id=CHAT_ID, message_id=msg.message_id)
         await bot.send_document(chat_id=CHAT_ID, document=excel, filename=filename, caption=f"📁 {filename}")
         logger.info("Входы отправлены")
     except Exception as e:
         logger.error(f"Ошибка входов: {e}")
+        await bot.delete_message(chat_id=CHAT_ID, message_id=msg.message_id)
         await bot.send_message(chat_id=CHAT_ID, text=f"❌ Ошибка входов:\n{e}")
 
     await asyncio.sleep(60)
 
     # 3. Записи
+    msg = await bot.send_message(chat_id=CHAT_ID, text=f"⏳ Выгружаю записи {mon.strftime('%d.%m')}...")
     try:
-        await bot.send_message(chat_id=CHAT_ID, text=f"⏳ Выгружаю записи {mon.strftime('%d.%m')}...")
         df_views = await fetch_users_by_group(
             dates["views_group_name"],
             date_from=dates["views_date_from"],
@@ -95,83 +102,52 @@ async def wednesday_job():
         )
         filename = f"записи {mon.strftime('%d.%m')} вб2.xlsx"
         excel = build_excel(df_views, filename)
-
-        # Аналитика входы + записи вместе
-        total_entry = len(df_entry) if 'df_entry' in dir() else 0
-        total_views = len(df_views)
-        entry_label = mon.strftime('%d.%m')
-        text = (
-            f"📊 <b>Входы + Записи {entry_label}:</b>\n"
-            f"Входов: <b>{total_entry}</b>\n"
-            f"Записей: <b>{total_views}</b>\n"
-            f"Итого: <b>{total_entry + total_views}</b>\n\n"
-            f"🎯 <b>Входы по источникам:</b>\n"
-        )
-        if 'df_entry' in dir() and not df_entry.empty:
-            if "utm_source" in df_entry.columns and "utm_medium" in df_entry.columns:
-                grouped = (
-                    df_entry.assign(
-                        source=df_entry["utm_source"].fillna("—").replace("", "—"),
-                        medium=df_entry["utm_medium"].fillna("—").replace("", "—")
-                    )
-                    .groupby(["source", "medium"]).size()
-                    .reset_index(name="count")
-                    .sort_values("count", ascending=False)
-                )
-                for _, row in grouped.iterrows():
-                    text += f"— {row['source']} / {row['medium']}: {row['count']}\n"
-        text += "\n🎯 <b>Записи по источникам:</b>\n"
-        if not df_views.empty:
-            if "utm_source" in df_views.columns and "utm_medium" in df_views.columns:
-                grouped = (
-                    df_views.assign(
-                        source=df_views["utm_source"].fillna("—").replace("", "—"),
-                        medium=df_views["utm_medium"].fillna("—").replace("", "—")
-                    )
-                    .groupby(["source", "medium"]).size()
-                    .reset_index(name="count")
-                    .sort_values("count", ascending=False)
-                )
-                for _, row in grouped.iterrows():
-                    text += f"— {row['source']} / {row['medium']}: {row['count']}\n"
-
+        await bot.delete_message(chat_id=CHAT_ID, message_id=msg.message_id)
         await bot.send_document(chat_id=CHAT_ID, document=excel, filename=filename, caption=f"📁 {filename}")
-        await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
+        # Аналитика входы + записи вместе
+        if df_entry is not None and df_views is not None:
+            text = analytics_views_and_entries(df_entry, df_views, mon.strftime('%d.%m'))
+            await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
         logger.info("Записи отправлены")
     except Exception as e:
         logger.error(f"Ошибка записей: {e}")
+        await bot.delete_message(chat_id=CHAT_ID, message_id=msg.message_id)
         await bot.send_message(chat_id=CHAT_ID, text=f"❌ Ошибка записей:\n{e}")
 
     await asyncio.sleep(60)
 
     # 4. Заказы прошлый трёхдневник
+    msg = await bot.send_message(chat_id=CHAT_ID, text=f"⏳ Выгружаю заказы {dates['deals1_label']}...")
     try:
-        await bot.send_message(chat_id=CHAT_ID, text=f"⏳ Выгружаю заказы {dates['deals1_label']}...")
         df_deals1 = await fetch_deals_wednesday(dates["deals1_from"], dates["deals1_to"])
         filename = f"заказы {dates['deals1_label']} вб2.xlsx"
         excel = build_excel(df_deals1, filename)
         text = analytics_deals_wednesday(df_deals1, dates["deals1_label"])
+        await bot.delete_message(chat_id=CHAT_ID, message_id=msg.message_id)
         await bot.send_document(chat_id=CHAT_ID, document=excel, filename=filename, caption=f"📁 {filename}")
         await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
         logger.info("Заказы 1 отправлены")
     except Exception as e:
         logger.error(f"Ошибка заказов 1: {e}")
+        await bot.delete_message(chat_id=CHAT_ID, message_id=msg.message_id)
         await bot.send_message(chat_id=CHAT_ID, text=f"❌ Ошибка заказов {dates['deals1_label']}:\n{e}")
 
     await asyncio.sleep(60)
 
     # 5. Заказы позапрошлый трёхдневник
+    msg = await bot.send_message(chat_id=CHAT_ID, text=f"⏳ Выгружаю заказы {dates['deals2_label']}...")
     try:
-        await bot.send_message(chat_id=CHAT_ID, text=f"⏳ Выгружаю заказы {dates['deals2_label']}...")
         df_deals2 = await fetch_deals_wednesday(dates["deals2_from"], dates["deals2_to"])
         filename = f"заказы {dates['deals2_label']} вб2.xlsx"
         excel = build_excel(df_deals2, filename)
         text = analytics_deals_wednesday(df_deals2, dates["deals2_label"])
+        await bot.delete_message(chat_id=CHAT_ID, message_id=msg.message_id)
         await bot.send_document(chat_id=CHAT_ID, document=excel, filename=filename, caption=f"📁 {filename}")
         await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
         logger.info("Заказы 2 отправлены")
     except Exception as e:
         logger.error(f"Ошибка заказов 2: {e}")
+        await bot.delete_message(chat_id=CHAT_ID, message_id=msg.message_id)
         await bot.send_message(chat_id=CHAT_ID, text=f"❌ Ошибка заказов {dates['deals2_label']}:\n{e}")
 
     logger.info("Все среда выгрузки завершены")

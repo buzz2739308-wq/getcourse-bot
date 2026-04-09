@@ -25,50 +25,33 @@ MONTHS_RU = {
 }
 
 def get_wednesday_dates(today: date) -> dict:
-    """Вычисляет все нужные даты для среды."""
-    # Понедельник текущей недели
     mon = today - timedelta(days=today.weekday())
-    wed = mon + timedelta(days=2)  # среда = пн + 2
-
-    # Прошлый трёхдневник
+    wed = mon + timedelta(days=2)
     prev_mon = mon - timedelta(weeks=1)
     prev_wed = prev_mon + timedelta(days=2)
-
-    # Позапрошлый трёхдневник
     prev2_mon = mon - timedelta(weeks=2)
     prev2_wed = prev2_mon + timedelta(days=2)
-
     return {
-        # Текущий трёхдневник
         "mon": mon,
         "wed": wed,
-        # Регистрации — группа с датами текущего трёхдневника
         "reg_group_name": (
             f"{MONTHS_RU[mon.month]} | Стажировка | "
             f"Регистрация на веб. {mon.strftime('%d')}-{wed.strftime('%d.%m.%Y')}"
         ),
-        # Входы — группа с датой понедельника
         "entry_group_name": (
             f"{MONTHS_RU[mon.month]} | Курс 2-26 | "
             f"Вход на веб. {mon.strftime('%d.%m.%y')}"
         ),
-        # Записи — постоянная группа, фильтр по дате добавления
         "views_group_name": "КУРС 1.1 | Просмотр записи вебинара. День 1. 2025",
         "views_date_from": mon,
-        "views_date_to": mon + timedelta(days=6),  # пн + 6 = вс
-
-        # Заказы прошлого трёхдневника: от среды прошлого до следующего вт
+        "views_date_to": mon + timedelta(days=6),
         "deals1_from": prev_wed,
         "deals1_to": prev_wed + timedelta(days=6),
         "deals1_label": f"{prev_wed.strftime('%d.%m')}-{(prev_wed + timedelta(days=6)).strftime('%d.%m')}",
-
-        # Заказы позапрошлого трёхдневника
         "deals2_from": prev2_wed,
         "deals2_to": prev2_wed + timedelta(days=6),
         "deals2_label": f"{prev2_wed.strftime('%d.%m')}-{(prev2_wed + timedelta(days=6)).strftime('%d.%m')}",
     }
-
-# --- Общие функции ---
 
 async def _wait_and_download(session, export_id):
     url = f"{BASE_URL}/exports/{export_id}"
@@ -112,8 +95,6 @@ def _clean_df(fields, items):
         df[col] = df[col].apply(lambda x: ", ".join(str(i) for i in x) if isinstance(x, list) else x)
     return df
 
-# --- Поиск группы по названию ---
-
 async def find_group_id(session, group_name: str) -> int:
     url = f"{BASE_URL}/groups"
     params = {"key": GC_API_KEY}
@@ -126,8 +107,6 @@ async def find_group_id(session, group_name: str) -> int:
             logger.info(f"Найдена группа: {group_name} id={g['id']}")
             return g["id"]
     raise ValueError(f"Группа не найдена: {group_name}")
-
-# --- Выгрузка пользователей по группе ---
 
 async def fetch_users_by_group(group_name: str, date_from: date = None, date_to: date = None) -> pd.DataFrame:
     async with aiohttp.ClientSession() as session:
@@ -142,8 +121,6 @@ async def fetch_users_by_group(group_name: str, date_from: date = None, date_to:
         fields, items = await _wait_and_download(session, export_id)
     return _clean_df(fields, items)
 
-# --- Выгрузка заказов ---
-
 async def fetch_deals_wednesday(date_from: date, date_to: date) -> pd.DataFrame:
     async with aiohttp.ClientSession() as session:
         url = f"{BASE_URL}/deals"
@@ -151,48 +128,60 @@ async def fetch_deals_wednesday(date_from: date, date_to: date) -> pd.DataFrame:
             "key": GC_API_KEY,
             "created_at[from]": date_from.strftime("%Y-%m-%d"),
             "created_at[to]": date_to.strftime("%Y-%m-%d"),
-            "free": "0",
         }
         export_id = await _create_export_with_retry(session, url, params)
         fields, items = await _wait_and_download(session, export_id)
     df = _clean_df(fields, items)
-    # Фильтруем — исключаем ненужные теги
+    # Исключаем ненужные теги
     exclude_tags = ["*Инфографика", "Бизнес на Wildberries", "скидка_ноябрь2025"]
     if "Теги предложений" in df.columns:
         for tag in exclude_tags:
             df = df[~df["Теги предложений"].str.contains(tag, na=False)]
+    # Исключаем нулевые заказы
+    if "Стоимость, RUB" in df.columns:
+        df["Стоимость, RUB"] = pd.to_numeric(df["Стоимость, RUB"].astype(str).str.replace(r"[^0-9.]", "", regex=True), errors="coerce").fillna(0)
+        df = df[df["Стоимость, RUB"] > 0]
     return df
 
-# --- Аналитика ---
+def _top10_by_source(df: pd.DataFrame) -> list:
+    if "utm_source" not in df.columns or "utm_medium" not in df.columns:
+        return []
+    grouped = (
+        df.assign(
+            source=df["utm_source"].fillna("—").replace("", "—"),
+            medium=df["utm_medium"].fillna("—").replace("", "—")
+        )
+        .groupby(["source", "medium"])
+        .size()
+        .reset_index(name="count")
+        .sort_values("count", ascending=False)
+        .head(10)
+    )
+    return [f"— {r['source']} / {r['medium']}: {r['count']}" for _, r in grouped.iterrows()]
 
 def analytics_users(df: pd.DataFrame, label: str, kind: str) -> str:
-    total = len(df)
-    lines = [f"📊 <b>{kind} {label}:</b>", f"Всего: <b>{total}</b>", "", "🎯 <b>По источникам:</b>"]
-    if "utm_source" in df.columns and "utm_medium" in df.columns:
-        grouped = (
-            df.assign(
-                source=df["utm_source"].fillna("—").replace("", "—"),
-                medium=df["utm_medium"].fillna("—").replace("", "—")
-            )
-            .groupby(["source", "medium"])
-            .size()
-            .reset_index(name="count")
-            .sort_values("count", ascending=False)
-        )
-        for _, row in grouped.iterrows():
-            lines.append(f"— {row['source']} / {row['medium']}: {row['count']}")
+    lines = [f"📊 <b>{kind} {label}:</b>", f"Всего: <b>{len(df)}</b>", "", "🎯 <b>Топ-10 источников:</b>"]
+    lines += _top10_by_source(df)
+    return "\n".join(lines)
+
+def analytics_views_and_entries(df_entry: pd.DataFrame, df_views: pd.DataFrame, label: str) -> str:
+    lines = [
+        f"📊 <b>Входы + Записи {label}:</b>",
+        f"Входов: <b>{len(df_entry)}</b>",
+        f"Записей: <b>{len(df_views)}</b>",
+        f"Итого: <b>{len(df_entry) + len(df_views)}</b>",
+        "",
+        "🎯 <b>Входы топ-10:</b>",
+    ]
+    lines += _top10_by_source(df_entry)
+    lines += ["", "🎯 <b>Записи топ-10:</b>"]
+    lines += _top10_by_source(df_views)
     return "\n".join(lines)
 
 def analytics_deals_wednesday(df: pd.DataFrame, label: str) -> str:
     total = len(df)
     cost_col = "Стоимость, RUB"
-    total_sum = 0
-    if cost_col in df.columns:
-        df[cost_col] = pd.to_numeric(
-            df[cost_col].astype(str).str.replace(r"[^\d.]", "", regex=True),
-            errors="coerce"
-        ).fillna(0)
-        total_sum = df[cost_col].sum()
+    total_sum = df[cost_col].sum() if cost_col in df.columns else 0
 
     def fmt(v):
         return f"{float(v):,.0f} ₽".replace(",", " ")
@@ -202,7 +191,7 @@ def analytics_deals_wednesday(df: pd.DataFrame, label: str) -> str:
         f"Всего заказов: <b>{total}</b>",
         f"Сумма: <b>{fmt(total_sum)}</b>",
         "",
-        "🎯 <b>По источникам:</b>"
+        "🎯 <b>Топ-10 источников:</b>"
     ]
     if "utm_source" in df.columns and "utm_medium" in df.columns and cost_col in df.columns:
         grouped = (
@@ -213,6 +202,7 @@ def analytics_deals_wednesday(df: pd.DataFrame, label: str) -> str:
             .groupby(["source", "medium"])
             .agg(count=("utm_source", "count"), total=(cost_col, "sum"))
             .sort_values("total", ascending=False)
+            .head(10)
             .reset_index()
         )
         for _, row in grouped.iterrows():
