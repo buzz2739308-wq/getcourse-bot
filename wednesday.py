@@ -126,6 +126,28 @@ async def fetch_deals_wednesday(date_from: date, date_to: date) -> pd.DataFrame:
             "key": GC_API_KEY,
             "created_at[from]": date_from.strftime("%Y-%m-%d"),
             "created_at[to]": date_to.strftime("%Y-%m-%d"),
+            # Важно: заказы считаем по дате создания и включаем неоплаченные.
+            # Нулевые/регистрационные заказы отфильтруем ниже по стоимости.
+        }
+        export_id = await _create_export_with_retry(session, url, params)
+        fields, items = await _wait_and_download(session, export_id)
+    df = _clean_df(fields, items)
+    if "Стоимость, RUB" in df.columns:
+        df["Стоимость, RUB"] = pd.to_numeric(
+            df["Стоимость, RUB"].astype(str).str.replace(r"[^0-9.]", "", regex=True),
+            errors="coerce"
+        ).fillna(0)
+        df = df[df["Стоимость, RUB"] > 0]
+    return df
+
+async def fetch_deals_payed(date_from: date, date_to: date) -> pd.DataFrame:
+    """Оплаченные сделки за период payed_at. Стоимость>0 фильтруется внутри."""
+    async with aiohttp.ClientSession() as session:
+        url = f"{BASE_URL}/deals"
+        params = {
+            "key": GC_API_KEY,
+            "payed_at[from]": date_from.strftime("%Y-%m-%d"),
+            "payed_at[to]": date_to.strftime("%Y-%m-%d"),
             "status": "payed",
         }
         export_id = await _create_export_with_retry(session, url, params)
@@ -183,11 +205,16 @@ def analytics_deals_wednesday(df: pd.DataFrame, label: str) -> str:
         "",
         "🎯 <b>Топ-10 источников:</b>"
     ]
-    if "utm_source" in df.columns and "utm_medium" in df.columns and cost_col in df.columns:
+    # Для заказов используем UTM пользователя (а не UTM сделки),
+    # чтобы совпадать с аналитикой в интерфейсе/экспортах.
+    source_col = "user_utm_source" if "user_utm_source" in df.columns else "utm_source"
+    medium_col = "user_utm_medium" if "user_utm_medium" in df.columns else "utm_medium"
+
+    if source_col in df.columns and medium_col in df.columns and cost_col in df.columns:
         grouped = (
             df.assign(
-                source=df["utm_source"].fillna("—").replace("", "—"),
-                medium=df["utm_medium"].fillna("—").replace("", "—")
+                source=df[source_col].fillna("—").replace("", "—"),
+                medium=df[medium_col].fillna("—").replace("", "—")
             )
             .groupby(["source", "medium"])
             .agg(count=("utm_source", "count"), total=(cost_col, "sum"))

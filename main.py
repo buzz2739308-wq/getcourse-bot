@@ -18,6 +18,7 @@ from wednesday import (
 from dashboard_regs import main as update_dashboard_regs
 from dashboard_participants import main as update_dashboard_participants
 from dashboard_deals import main as update_dashboard_deals
+from dashboard_payments import main as update_dashboard_payments
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -198,6 +199,20 @@ async def dashboard_deals_job():
             pass
 
 
+async def dashboard_payments_job():
+    logger.info("Обновление оплат и выручки в дашборде")
+    try:
+        await update_dashboard_payments()
+        logger.info("Оплаты и выручка в дашборде обновлены")
+    except Exception as e:
+        logger.error(f"Ошибка обновления оплат: {e}")
+        try:
+            bot = Bot(token=BOT_TOKEN)
+            await bot.send_message(chat_id=CHAT_ID, text=f"❌ Ошибка обновления оплат/выручки в дашборде:\n{e}")
+        except TelegramError:
+            pass
+
+
 async def main():
     scheduler = AsyncIOScheduler(timezone=MOSCOW_TZ)
     scheduler.add_job(daily_job, "cron", hour=9, minute=0)
@@ -205,8 +220,9 @@ async def main():
     scheduler.add_job(dashboard_regs_job, "cron", hour=0, minute=1)
     scheduler.add_job(dashboard_participants_job, "cron", hour=0, minute=1)
     scheduler.add_job(dashboard_deals_job, "cron", hour=0, minute=1)
+    scheduler.add_job(dashboard_payments_job, "cron", hour=0, minute=1)
     scheduler.start()
-    logger.info("Бот запущен. Ежедневно 09:00 оплаты и 00:01 регистрации+участники+заказы дашборда, по средам доп. выгрузки в 09:05 МСК.")
+    logger.info("Бот запущен. Ежедневно 09:00 оплаты и 00:01 регистрации+участники+заказы+оплаты дашборда, по средам доп. выгрузки в 09:05 МСК.")
 
     if os.environ.get("RUN_NOW") == "1":
         await daily_job()
@@ -218,6 +234,8 @@ async def main():
         await dashboard_participants_job()
     if os.environ.get("RUN_DASHBOARD_DEALS") == "1":
         await dashboard_deals_job()
+    if os.environ.get("RUN_DASHBOARD_PAYMENTS") == "1":
+        await dashboard_payments_job()
 
     while True:
         await asyncio.sleep(3600)

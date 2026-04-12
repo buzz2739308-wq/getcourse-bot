@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 load_dotenv()  # до импорта wednesday — он читает GC_API_KEY на уровне модуля
 
 import gspread
+import pandas as pd
 from google.oauth2.service_account import Credentials
 
 from wednesday import MONTHS_RU, fetch_users_by_group
@@ -103,15 +104,13 @@ def compute_dates(today: date) -> dict:
     }
 
 
-def count_by_channel(df) -> dict:
-    if df.empty:
-        return {name: 0 for name, _ in CHANNELS}
-    # Источники не всегда называются одинаково — ищем обе частые формы.
+def _channel_masks(df):
+    """Возвращает dict channel_name -> boolean mask по CHANNELS."""
     src_col = next((c for c in ("utm_source", "user_utm_source") if c in df.columns), None)
     med_col = next((c for c in ("utm_medium", "user_utm_medium") if c in df.columns), None)
     src = df[src_col].fillna("").astype(str).str.strip().str.lower() if src_col else None
     med = df[med_col].fillna("").astype(str).str.strip().str.lower() if med_col else None
-    counts = {}
+    masks = {}
     for name, rules in CHANNELS:
         mask = None
         if "source" in rules and src is not None:
@@ -120,8 +119,27 @@ def count_by_channel(df) -> dict:
         if "medium" in rules and med is not None:
             m = med.isin(rules["medium"])
             mask = m if mask is None else (mask | m)
-        counts[name] = int(mask.sum()) if mask is not None else 0
-    return counts
+        masks[name] = mask
+    return masks
+
+
+def count_by_channel(df) -> dict:
+    if df.empty:
+        return {name: 0 for name, _ in CHANNELS}
+    masks = _channel_masks(df)
+    return {name: (int(m.sum()) if m is not None else 0) for name, m in masks.items()}
+
+
+def sum_by_channel(df, value_col: str) -> dict:
+    """Суммирует value_col по каналам на основе CHANNELS."""
+    if df.empty or value_col not in df.columns:
+        return {name: 0.0 for name, _ in CHANNELS}
+    masks = _channel_masks(df)
+    values = pd.to_numeric(df[value_col], errors="coerce").fillna(0)
+    return {
+        name: (float(values[m].sum()) if m is not None else 0.0)
+        for name, m in masks.items()
+    }
 
 
 def update_sheet(week_label: str, counts: dict, col_letter: str = REG_COLUMN_LETTER) -> dict:
