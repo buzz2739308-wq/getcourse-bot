@@ -14,7 +14,9 @@ Cron пример: 1 0 * * * cd ~/Documents/getcourse_bot && /usr/bin/env python
 - Считаем по каналам → обновляем колонку Регистрации в листе ДАННЫЕ.
 """
 import asyncio
+import json
 import logging
+import os
 import sys
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -36,8 +38,17 @@ logger = logging.getLogger("dashboard_regs")
 
 SHEET_ID = "1V7sVTvvpWB3ejHdTpu4plpyq8uFU5x99gW_IJs0508w"
 TAB_NAME = "ДАННЫЕ"
-CREDS_PATH = "/Users/qwerty/wildmanager/credentials.json"
+# На проде (Railway) креды передаются через env GOOGLE_CREDENTIALS_JSON.
+# Локально — ищем файл по CREDS_PATH.
+CREDS_PATH = os.environ.get("GOOGLE_CREDENTIALS_PATH", "/Users/qwerty/wildmanager/credentials.json")
 REG_COLUMN_LETTER = "H"  # Регистрации (заголовок row 1: Неделя,Канал,Расход,Выручка,Охваты,Клики,Клики на лендинг,Регистрации)
+
+
+def _load_credentials(scopes):
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    if creds_json:
+        return Credentials.from_service_account_info(json.loads(creds_json), scopes=scopes)
+    return Credentials.from_service_account_file(CREDS_PATH, scopes=scopes)
 
 MONTHS_GEN = {
     1: "января", 2: "февраля", 3: "марта", 4: "апреля",
@@ -144,7 +155,7 @@ def sum_by_channel(df, value_col: str) -> dict:
 
 def update_sheet(week_label: str, counts: dict, col_letter: str = REG_COLUMN_LETTER) -> dict:
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=scopes)
+    creds = _load_credentials(scopes)
     gc = gspread.authorize(creds)
     ws = gc.open_by_key(SHEET_ID).worksheet(TAB_NAME)
     all_values = ws.get_all_values()
