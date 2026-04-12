@@ -124,7 +124,7 @@ def count_by_channel(df) -> dict:
     return counts
 
 
-def update_sheet(week_label: str, counts: dict) -> dict:
+def update_sheet(week_label: str, counts: dict, col_letter: str = REG_COLUMN_LETTER) -> dict:
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     creds = Credentials.from_service_account_file(CREDS_PATH, scopes=scopes)
     gc = gspread.authorize(creds)
@@ -146,7 +146,7 @@ def update_sheet(week_label: str, counts: dict) -> dict:
             result[name] = ("не найдено", value)
             continue
         updates.append({
-            "range": f"{REG_COLUMN_LETTER}{row_idx}",
+            "range": f"{col_letter}{row_idx}",
             "values": [[value]],
         })
         result[name] = (row_idx, value)

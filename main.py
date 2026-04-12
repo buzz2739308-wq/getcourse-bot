@@ -16,6 +16,7 @@ from wednesday import (
     analytics_deals_wednesday, analytics_views_and_entries
 )
 from dashboard_regs import main as update_dashboard_regs
+from dashboard_participants import main as update_dashboard_participants
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -168,13 +169,28 @@ async def dashboard_regs_job():
             pass
 
 
+async def dashboard_participants_job():
+    logger.info("Обновление участников в дашборде")
+    try:
+        await update_dashboard_participants()
+        logger.info("Участники в дашборде обновлены")
+    except Exception as e:
+        logger.error(f"Ошибка обновления участников: {e}")
+        try:
+            bot = Bot(token=BOT_TOKEN)
+            await bot.send_message(chat_id=CHAT_ID, text=f"❌ Ошибка обновления участников в дашборде:\n{e}")
+        except TelegramError:
+            pass
+
+
 async def main():
     scheduler = AsyncIOScheduler(timezone=MOSCOW_TZ)
     scheduler.add_job(daily_job, "cron", hour=9, minute=0)
     scheduler.add_job(wednesday_job, "cron", day_of_week="wed", hour=9, minute=5)
     scheduler.add_job(dashboard_regs_job, "cron", hour=0, minute=1)
+    scheduler.add_job(dashboard_participants_job, "cron", hour=0, minute=1)
     scheduler.start()
-    logger.info("Бот запущен. Ежедневно 09:00 оплаты и 00:01 регистрации дашборда, по средам доп. выгрузки в 09:05 МСК.")
+    logger.info("Бот запущен. Ежедневно 09:00 оплаты и 00:01 регистрации+участники дашборда, по средам доп. выгрузки в 09:05 МСК.")
 
     if os.environ.get("RUN_NOW") == "1":
         await daily_job()
@@ -182,6 +198,8 @@ async def main():
         await wednesday_job()
     if os.environ.get("RUN_DASHBOARD_REGS") == "1":
         await dashboard_regs_job()
+    if os.environ.get("RUN_DASHBOARD_PARTICIPANTS") == "1":
+        await dashboard_participants_job()
 
     while True:
         await asyncio.sleep(3600)
