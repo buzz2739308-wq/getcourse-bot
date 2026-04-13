@@ -29,6 +29,7 @@ import pandas as pd
 from google.oauth2.service_account import Credentials
 
 from wednesday import MONTHS_RU, fetch_users_by_group
+from dashboard_utils import sanitize
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,7 +48,18 @@ REG_COLUMN_LETTER = "H"  # Регистрации (заголовок row 1: Н�
 def _load_credentials(scopes):
     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
     if creds_json:
-        return Credentials.from_service_account_info(json.loads(creds_json), scopes=scopes)
+        try:
+            data = json.loads(creds_json)
+        except json.JSONDecodeError:
+            # Railway/аналоги могут сохранить \n как реальные переводы строк
+            # внутри private_key — это невалидный JSON. Экранируем обратно.
+            fixed = (creds_json
+                     .replace("\r\n", "\\n")
+                     .replace("\n", "\\n")
+                     .replace("\r", "\\n")
+                     .replace("\t", "\\t"))
+            data = json.loads(fixed)
+        return Credentials.from_service_account_info(data, scopes=scopes)
     return Credentials.from_service_account_file(CREDS_PATH, scopes=scopes)
 
 MONTHS_GEN = {
@@ -159,6 +171,9 @@ def update_sheet(week_label: str, counts: dict, col_letter: str = REG_COLUMN_LET
     gc = gspread.authorize(creds)
     ws = gc.open_by_key(SHEET_ID).worksheet(TAB_NAME)
     all_values = ws.get_all_values()
+
+    week_label = sanitize(week_label)
+    counts = {sanitize(k): sanitize(v) for k, v in counts.items()}
 
     updates = []
     result = {}
