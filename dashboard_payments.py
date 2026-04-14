@@ -38,8 +38,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("dashboard_payments")
 
-REVENUE_COL_LETTER = "D"   # Выручка
-PAYMENTS_COL_LETTER = "K"  # Оплаты
+REVENUE_COL_LETTER = "E"   # Выручка (после вставки колонки План)
+PAYMENTS_COL_LETTER = "L"  # Оплаты (после вставки колонки План)
 EARNED_FIELD = "Заработано"
 
 

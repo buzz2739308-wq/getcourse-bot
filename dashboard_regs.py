@@ -42,7 +42,7 @@ TAB_NAME = "ДАННЫЕ"
 # На проде (Railway) креды передаются через env GOOGLE_CREDENTIALS_JSON.
 # Локально — ищем файл по CREDS_PATH.
 CREDS_PATH = os.environ.get("GOOGLE_CREDENTIALS_PATH", "/Users/qwerty/wildmanager/credentials.json")
-REG_COLUMN_LETTER = "H"  # Регистрации (заголовок row 1: Неделя,Канал,Расход,Выручка,Охваты,Клики,Клики на лендинг,Регистрации)
+REG_COLUMN_LETTER = "I"  # Регистрации (после вставки колонки План: Неделя,Канал,План,Расход,Выручка,Охваты,Клики,Клики на лендинг,Регистрации)
 
 
 def _load_credentials(scopes):

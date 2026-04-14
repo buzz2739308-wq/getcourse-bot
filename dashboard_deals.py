@@ -30,7 +30,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("dashboard_deals")
 
-DEALS_COLUMN_LETTER = "J"  # Заказы
+DEALS_COLUMN_LETTER = "K"  # Заказы (после вставки колонки План)
 
 
 async def main():

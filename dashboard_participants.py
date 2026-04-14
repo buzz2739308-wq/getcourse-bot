@@ -33,7 +33,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("dashboard_participants")
 
-PART_COLUMN_LETTER = "I"  # Участники (Неделя,Канал,Расход,Выручка,Охваты,Клики,Клики на лендинг,Регистрации,Участники)
+PART_COLUMN_LETTER = "J"  # Участники (после вставки колонки План)
 
 
 async def main():
