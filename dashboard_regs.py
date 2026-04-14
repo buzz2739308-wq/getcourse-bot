@@ -146,23 +146,35 @@ def _channel_masks(df):
     return masks
 
 
+NO_LABEL_CHANNEL = "Без меток"
+
+
 def count_by_channel(df) -> dict:
     if df.empty:
-        return {name: 0 for name, _ in CHANNELS}
+        result = {name: 0 for name, _ in CHANNELS}
+        result[NO_LABEL_CHANNEL] = 0
+        return result
     masks = _channel_masks(df)
-    return {name: (int(m.sum()) if m is not None else 0) for name, m in masks.items()}
+    result = {name: (int(m.sum()) if m is not None else 0) for name, m in masks.items()}
+    # Остаток — всё что не попало ни в один канал
+    result[NO_LABEL_CHANNEL] = int(len(df) - sum(result.values()))
+    return result
 
 
 def sum_by_channel(df, value_col: str) -> dict:
-    """Суммирует value_col по каналам на основе CHANNELS."""
+    """Суммирует value_col по каналам на основе CHANNELS. Остаток идёт в 'Без меток'."""
     if df.empty or value_col not in df.columns:
-        return {name: 0.0 for name, _ in CHANNELS}
+        result = {name: 0.0 for name, _ in CHANNELS}
+        result[NO_LABEL_CHANNEL] = 0.0
+        return result
     masks = _channel_masks(df)
     values = pd.to_numeric(df[value_col], errors="coerce").fillna(0)
-    return {
+    result = {
         name: (float(values[m].sum()) if m is not None else 0.0)
         for name, m in masks.items()
     }
+    result[NO_LABEL_CHANNEL] = float(values.sum() - sum(result.values()))
+    return result
 
 
 def update_sheet(week_label: str, counts: dict, col_letter: str = REG_COLUMN_LETTER) -> dict:
