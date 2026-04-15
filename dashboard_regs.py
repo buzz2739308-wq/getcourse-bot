@@ -45,21 +45,48 @@ CREDS_PATH = os.environ.get("GOOGLE_CREDENTIALS_PATH", "/Users/qwerty/wildmanage
 REG_COLUMN_LETTER = "I"  # Регистрации (после вставки колонки План: Неделя,Канал,План,Расход,Выручка,Охваты,Клики,Клики на лендинг,Регистрации)
 
 
+def _escape_controls_inside_strings(s: str) -> str:
+    """Экранирует control-символы только внутри JSON-строковых значений,
+    сохраняя пробелы/переводы строк между токенами (они в JSON легальны)."""
+    out = []
+    in_string = False
+    escape_next = False
+    esc = {"\n": "\\n", "\r": "\\r", "\t": "\\t", "\b": "\\b", "\f": "\\f"}
+    for ch in s:
+        if escape_next:
+            out.append(ch); escape_next = False; continue
+        if in_string:
+            if ch == "\\":
+                out.append(ch); escape_next = True; continue
+            if ch == '"':
+                in_string = False; out.append(ch); continue
+            if ch in esc:
+                out.append(esc[ch]); continue
+            if ord(ch) < 0x20:
+                out.append(f"\\u{ord(ch):04x}"); continue
+        else:
+            if ch == '"':
+                in_string = True
+        out.append(ch)
+    return "".join(out)
+
+
 def _load_credentials(scopes):
+    import base64
+    # 1) base64-упакованный JSON — самый надёжный способ на Railway
+    b64 = os.environ.get("GOOGLE_CREDENTIALS_JSON_B64")
+    if b64:
+        raw = base64.b64decode(b64).decode("utf-8")
+        return Credentials.from_service_account_info(json.loads(raw), scopes=scopes)
+    # 2) обычный JSON в env — пробуем как есть, при ошибке чиним control-символы
     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
     if creds_json:
         try:
             data = json.loads(creds_json)
         except json.JSONDecodeError:
-            # Railway/аналоги могут сохранить \n как реальные переводы строк
-            # внутри private_key — это невалидный JSON. Экранируем обратно.
-            fixed = (creds_json
-                     .replace("\r\n", "\\n")
-                     .replace("\n", "\\n")
-                     .replace("\r", "\\n")
-                     .replace("\t", "\\t"))
-            data = json.loads(fixed)
+            data = json.loads(_escape_controls_inside_strings(creds_json))
         return Credentials.from_service_account_info(data, scopes=scopes)
+    # 3) локальный файл (разработка)
     return Credentials.from_service_account_file(CREDS_PATH, scopes=scopes)
 
 MONTHS_GEN = {
