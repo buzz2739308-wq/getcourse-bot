@@ -16,7 +16,7 @@ BASE_URL = f"https://{GC_DOMAIN}/pl/api/account"
 POLL_INTERVAL = 15
 MAX_POLLS = 40
 RETRY_INTERVAL = 300
-MAX_RETRIES = 12
+MAX_RETRIES = 36
 
 MONTHS_RU = {
     1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
@@ -85,7 +85,7 @@ async def _create_export_with_retry(session, url, params):
             await asyncio.sleep(RETRY_INTERVAL)
         else:
             raise RuntimeError(f"GetCourse error: {data}")
-    raise RuntimeError("Очередь занята больше часа")
+    raise RuntimeError("Очередь занята больше 3 часов")
 
 def _clean_df(fields, items):
     df = pd.DataFrame(items, columns=fields)
