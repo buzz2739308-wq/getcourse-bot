@@ -128,8 +128,8 @@ CHANNELS = _normalize_channels(_CHANNELS_RAW)
 
 def compute_dates(today: date) -> dict:
     dow = today.weekday()  # Пн=0 ... Вс=6
-    if dow <= 1:
-        mw = today - timedelta(days=dow)           # Пн этой недели
+    if dow <= 2:
+        mw = today - timedelta(days=dow)           # Пн этой недели (вкл. среду — добиваем вчерашний вторник)
     else:
         mw = today + timedelta(days=(7 - dow))      # Пн следующей недели
     wed = mw + timedelta(days=2)
