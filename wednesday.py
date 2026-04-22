@@ -14,7 +14,7 @@ GC_API_KEY = os.environ["GC_API_KEY"]
 BASE_URL = f"https://{GC_DOMAIN}/pl/api/account"
 
 POLL_INTERVAL = 15
-MAX_POLLS = 40
+MAX_POLLS = 120
 RETRY_INTERVAL = 300
 MAX_RETRIES = 36
 
