@@ -18,6 +18,12 @@ MAX_POLLS = 120
 RETRY_INTERVAL = 300
 MAX_RETRIES = 36
 
+# Авто-ретрай при «зависшем» экспорте: если 30-минутный опрос вернул TimeoutError,
+# создаём НОВЫЙ запрос в GetCourse (часто свежий идёт быстрее) и опрашиваем заново.
+# 2 попытки × 30 мин = до 1 часа на одну выгрузку.
+EXPORT_ATTEMPTS = 2
+EXPORT_RETRY_PAUSE = 30
+
 MONTHS_RU = {
     1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
     5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
@@ -87,6 +93,25 @@ async def _create_export_with_retry(session, url, params):
             raise RuntimeError(f"GetCourse error: {data}")
     raise RuntimeError("Очередь занята больше 3 часов")
 
+async def _create_and_download(session, url, params):
+    """Создаёт экспорт + ждёт готовности. При TimeoutError создаёт НОВЫЙ
+    экспорт и пробует снова — лечит «зависшие» экспорты GetCourse."""
+    last_err = None
+    for attempt in range(EXPORT_ATTEMPTS):
+        try:
+            export_id = await _create_export_with_retry(session, url, params)
+            return await _wait_and_download(session, export_id)
+        except TimeoutError as e:
+            last_err = e
+            logger.warning(
+                "Экспорт не пришёл за окно опроса (попытка %s/%s) — стартую новый",
+                attempt + 1, EXPORT_ATTEMPTS,
+            )
+            if attempt + 1 < EXPORT_ATTEMPTS:
+                await asyncio.sleep(EXPORT_RETRY_PAUSE)
+    raise last_err
+
+
 def _clean_df(fields, items):
     df = pd.DataFrame(items, columns=fields)
     for col in df.columns:
@@ -115,8 +140,7 @@ async def fetch_users_by_group(group_name: str, date_from: date = None, date_to:
             params["added_at[from]"] = date_from.strftime("%Y-%m-%d")
         if date_to:
             params["added_at[to]"] = date_to.strftime("%Y-%m-%d")
-        export_id = await _create_export_with_retry(session, url, params)
-        fields, items = await _wait_and_download(session, export_id)
+        fields, items = await _create_and_download(session, url, params)
     return _clean_df(fields, items)
 
 async def fetch_deals_wednesday(date_from: date, date_to: date) -> pd.DataFrame:
@@ -129,8 +153,7 @@ async def fetch_deals_wednesday(date_from: date, date_to: date) -> pd.DataFrame:
             # Важно: заказы считаем по дате создания и включаем неоплаченные.
             # Нулевые/регистрационные заказы отфильтруем ниже по стоимости.
         }
-        export_id = await _create_export_with_retry(session, url, params)
-        fields, items = await _wait_and_download(session, export_id)
+        fields, items = await _create_and_download(session, url, params)
     df = _clean_df(fields, items)
     if "Стоимость, RUB" in df.columns:
         df["Стоимость, RUB"] = pd.to_numeric(
@@ -150,8 +173,7 @@ async def fetch_deals_payed(date_from: date, date_to: date) -> pd.DataFrame:
             "payed_at[to]": date_to.strftime("%Y-%m-%d"),
             "status": "payed",
         }
-        export_id = await _create_export_with_retry(session, url, params)
-        fields, items = await _wait_and_download(session, export_id)
+        fields, items = await _create_and_download(session, url, params)
     df = _clean_df(fields, items)
     if "Стоимость, RUB" in df.columns:
         df["Стоимость, RUB"] = pd.to_numeric(
